@@ -30,18 +30,20 @@ All of this is stored in the app's private storage on your device. Uninstalling 
 
 **Smarter chat answers (off by default):** if you switch on "Smarter chat answers (online)", questions you ask the Daily Guide are sent to our server together with a short summary of figures the app already shows you (light pattern, generator fuel, fuel prices, public bank network status). Questions about your spending, "your bank" and the morning brief are answered on your phone and not sent, unless you also switch on "Include money totals". With that switch on, only totals are added (for example "spent today", "urgent 2k transfers this week", your weekly budget and which bank most of your alerts come from).
 
+**Where it is stored:** community reports are stored in a Postgres database run by Neon, in its AWS Europe Central (Frankfurt, Germany) region, and handled by our server on Render, also in Frankfurt. This is a transfer outside Nigeria; see section 4.
+
 **Technical data:** our server sees your device's IP address when the app connects. We use it only to protect the service (for example, limiting how many chat questions one device can send in 10 minutes) and do not store it with your reports.
 
 ## 3. AI processing and transfer outside Nigeria
 
-When smarter chat answers are on, our server sends the question and the summary described above to **Anthropic** (Claude), an AI provider based in the United States, to word the reply. The app checks every number in the reply against the figures it sent; if the AI gives a number that was not in your figures, the app shows its own on-phone answer instead.
+When smarter chat answers are on, our server sends the question and the summary described above to **Google (Gemini API)**, an AI provider based in the United States, to word the reply. [If you switch the server to Anthropic (Claude), name Anthropic here instead.] The app checks every number in the reply against the figures it sent; if the AI gives a number that was not in your figures, the app shows its own on-phone answer instead.
 
-[Confirm and state here: Anthropic's data retention and training terms under your API agreement, and the NDPA basis for this cross-border transfer. Because the feature is off by default and needs your explicit opt-in, consent is the intended basis.]
+[Confirm and state here: Google's data retention and use terms for the Gemini API plan you use. Under Google's terms, prompts sent with an unpaid (free-tier) key may be used to improve Google's products; with a paid (billing-enabled) key they are not. Use a paid key before launch. Also state the NDPA basis for this cross-border transfer: because the feature is off by default and needs your explicit opt-in, consent is the intended basis.]
 
 ## 4. Legal basis (NDPA 2023)
 
 - **On-device processing:** you run it on your own phone; we do not receive the data.
-- **Community reports:** [legitimate interest in providing a crowd-sourced public information service / consent when you tap to report; confirm with counsel].
+- **Community reports:** [legitimate interest in providing a crowd-sourced public information service / consent when you tap to report; confirm with counsel]. Storage in Germany (EU) is a cross-border transfer under the NDPA; [state the basis, e.g. adequacy of the EU's data protection regime or consent].
 - **Smarter chat answers and money totals:** your consent, given by switching each one on. You can withdraw it at any time by switching it off.
 
 ## 5. How long we keep data
@@ -64,7 +66,7 @@ Lightline is not intended for anyone under 18. [Confirm with counsel.]
 
 ## 9. Security
 
-The app talks to our server over HTTPS. Database writes go only through our server, not directly from phones. Bank alert data is never uploaded. [Add: server hosting location, access controls, breach notification commitment (72 hours to NDPC under the NDPA).]
+The app talks to our server over HTTPS. Database writes go only through our server, not directly from phones. Bank alert data is never uploaded. The database is reachable only by our server over an encrypted connection. [Add: who on the team can access it, and the breach notification commitment (72 hours to NDPC under the NDPA).]
 
 ## 10. Changes
 

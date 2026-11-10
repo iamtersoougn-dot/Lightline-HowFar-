@@ -686,7 +686,7 @@ export class OfflineSyncEngine {
       const res = await fetch(`${API_BASE_URL}/api/v1/bootstrap?state=${code}`);
       if (!res.ok) return null;
       const data = await res.json();
-      if (data.mode !== 'SUPABASE_LIVE') return null;
+      if (data.mode !== 'LIVE' && data.mode !== 'SUPABASE_LIVE') return null;
 
       // Zones: server rows win by id; areas this phone added that the server lacks are kept
       let zones = this.getZones();

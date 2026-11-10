@@ -3,7 +3,7 @@
  *
  * The phone sends: the question, its own on-device draft answer, and a compact facts summary
  * (no bank alert text, no account digits, money totals only if the user allowed it).
- * The LLM may only rephrase from those facts. Safeguards:
+ * The LLM (Gemini by default, or Claude) may only rephrase from those facts. Safeguards:
  *  - the API key lives here on the server, never in the app
  *  - strict input limits and a per-device rate limit
  *  - any number in the reply that is not in the facts → the draft is returned instead
@@ -11,7 +11,10 @@
  */
 import type { Request, Response } from 'express';
 
+export type ChatProvider = 'gemini' | 'anthropic';
+
 export interface AgentChatOptions {
+  provider: ChatProvider;
   apiKey: string | undefined;
   model: string;
   fetchImpl?: typeof fetch;
@@ -20,6 +23,78 @@ export interface AgentChatOptions {
 }
 
 type Facts = Record<string, string | number | boolean | null>;
+
+export const DEFAULT_MODELS: Record<ChatProvider, string> = {
+  gemini: 'gemini-3.5-flash-lite',
+  anthropic: 'claude-haiku-5-5'
+};
+
+/** Reads GUIDE_AI_PROVIDER, GEMINI_API_KEY / ANTHROPIC_API_KEY and GUIDE_MODEL. */
+export function chatOptionsFromEnv(env: Record<string, string | undefined>): AgentChatOptions {
+  const provider: ChatProvider =
+    env.GUIDE_AI_PROVIDER === 'anthropic' || (!env.GUIDE_AI_PROVIDER && !env.GEMINI_API_KEY && env.ANTHROPIC_API_KEY)
+      ? 'anthropic'
+      : 'gemini';
+  return {
+    provider,
+    apiKey: provider === 'gemini' ? env.GEMINI_API_KEY : env.ANTHROPIC_API_KEY,
+    model: env.GUIDE_MODEL || DEFAULT_MODELS[provider]
+  };
+}
+
+/** Sends one request to the chosen provider and returns the reply text ('' if none). */
+export async function callModel(
+  opts: AgentChatOptions,
+  system: string,
+  user: string,
+  signal: AbortSignal
+): Promise<{ status: number; text: string }> {
+  const doFetch = opts.fetchImpl || fetch;
+  if (opts.provider === 'gemini') {
+    const r = await doFetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(opts.model)}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': opts.apiKey || '' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents: [{ role: 'user', parts: [{ text: user }] }],
+          // Room for models that think before answering; the prompt keeps the answer short
+          generationConfig: { maxOutputTokens: 1024, temperature: 0.3 }
+        }),
+        signal
+      }
+    );
+    if (!r.ok) return { status: r.status, text: '' };
+    const data = (await r.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
+    };
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    return { status: 200, text: parts.filter((x) => !x.thought).map((x) => x.text || '').join(' ').trim() };
+  }
+
+  const r = await doFetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': opts.apiKey || '',
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: opts.model,
+      max_tokens: 220,
+      system,
+      messages: [{ role: 'user', content: user }]
+    }),
+    signal
+  });
+  if (!r.ok) return { status: r.status, text: '' };
+  const data = (await r.json()) as { content?: Array<{ type: string; text?: string }> };
+  return {
+    status: 200,
+    text: (data.content || []).filter((c) => c.type === 'text').map((c) => c.text || '').join(' ').trim()
+  };
+}
 
 export function validateChatBody(body: unknown):
   | { ok: true; question: string; lang: 'en' | 'pcm'; draft: string; facts: Facts }
@@ -65,7 +140,6 @@ export function systemPrompt(lang: 'en' | 'pcm'): string {
 }
 
 export function createAgentChatHandler(opts: AgentChatOptions) {
-  const doFetch = opts.fetchImpl || fetch;
   const limit = opts.rateLimit || { max: 20, windowMs: 10 * 60_000 };
   const hits = new Map<string, number[]>();
 
@@ -89,35 +163,11 @@ export function createAgentChatHandler(opts: AgentChatOptions) {
 
     const factsText = JSON.stringify(v.facts);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 7000);
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 10_000);
     try {
-      const r = await doFetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': opts.apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: opts.model,
-          max_tokens: 220,
-          system: systemPrompt(v.lang),
-          messages: [
-            {
-              role: 'user',
-              content: `Facts (from the user's phone):\n${factsText}\n\nDraft answer computed on the phone:\n${v.draft}\n\nQuestion:\n${v.question}`
-            }
-          ]
-        }),
-        signal: controller.signal
-      });
-      if (!r.ok) return res.status(502).json({ error: `AI service error (${r.status})` });
-      const data = (await r.json()) as { content?: Array<{ type: string; text?: string }> };
-      const text = (data.content || [])
-        .filter((c) => c.type === 'text')
-        .map((c) => c.text || '')
-        .join(' ')
-        .trim();
+      const user = `Facts (from the user's phone):\n${factsText}\n\nDraft answer computed on the phone:\n${v.draft}\n\nQuestion:\n${v.question}`;
+      const { status, text } = await callModel(opts, systemPrompt(v.lang), user, controller.signal);
+      if (status !== 200) return res.status(502).json({ error: `AI service error (${status})` });
       if (!text) return res.status(502).json({ error: 'Empty AI reply' });
 
       // Safeguard: a reply with an unknown number falls back to the phone's own answer

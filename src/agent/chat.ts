@@ -268,7 +268,7 @@ export async function askGuide(
 
   const doFetch = opts.fetchImpl || globalThis.fetch;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = setTimeout(() => controller?.abort(), opts.timeoutMs ?? 8000);
+  const timer = setTimeout(() => controller?.abort(), opts.timeoutMs ?? 12_000);
   try {
     const res = await doFetch(opts.endpoint, {
       method: 'POST',

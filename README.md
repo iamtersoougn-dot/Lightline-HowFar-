@@ -9,19 +9,21 @@ A personal agent that learns your light, generator, fuel, bank and spending patt
 - How it works: [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md)
 - Code: `src/agent/` (journal, learning, suggestions, nudge limiter, brief, chat, demo week), `src/hooks/useDailyGuide.ts`, `src/components/guide/`, `server/agentChat.ts`
 - Demo for filming: Today → Daily Guide settings → **Demo week**, then tap 6:00am / 12:30pm / 6:15pm / 9:00pm. Or print it in a terminal: `npm run demo:print` (or `npm run demo:print -- pcm` for Pidgin).
-- Online chat is optional: set `ANTHROPIC_API_KEY` on the server. Without it, chat answers on the phone.
+- Online chat is optional: set `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY` with `GUIDE_AI_PROVIDER=anthropic`) on the server, and check it with `npm run check:ai`. Without a key, chat answers on the phone.
 - Privacy: [`docs/PRIVACY.md`](docs/PRIVACY.md) (draft). Status and launch checklist: [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Run locally
 
 ```bash
 npm install
-cp .env.example .env        # fill in Supabase values (optional: app works without them)
+cp .env.example .env        # DATABASE_URL (Neon) and GEMINI_API_KEY are optional locally
 npm run server              # backend on :4000
 npm run dev                 # frontend on :5173 (use --host LAN IP to open on your phone)
 ```
 
-Without Supabase credentials the backend runs in fallback mode: it acknowledges synced reports and the app keeps using its seeded local data.
+Without `DATABASE_URL` the backend runs in fallback mode: it acknowledges synced reports and the app keeps using its seeded local data.
+
+**Deploying, building the APK and recording the demo:** step by step in [`docs/DEPLOY.md`](docs/DEPLOY.md) (Neon + Render + Gemini + Android Studio).
 
 ## Coverage: all 36 states + FCT
 
@@ -32,17 +34,18 @@ Without Supabase credentials the backend runs in fallback mode: it acknowledges 
 
 ## Database
 
-Paste `supabase/schema.sql` into the Supabase SQL Editor and run it. It is safe to re-run. It is generated from the state list: after editing `src/data/nigeriaStates.ts`, run `npm run gen:schema`.
+Postgres on **Neon** (free plan). Set `DATABASE_URL` to the Neon connection string as copied; the server applies `server/schema.sql` on every start (safe to re-run), so a new database needs no manual SQL. The schema is generated from the state list: after editing `src/data/nigeriaStates.ts`, run `npm run gen:schema`.
 
-If you ran the first (Abuja/Lagos-only) schema, drop its tables first; their `city` columns are now `state_code`. Writes now go only through the backend, so the old open insert policies are removed.
+Server tests against a throwaway local database: `TEST_DATABASE_URL=postgres://user:pw@localhost:5432/lightline_test npm run test:server` (it wipes that database).
+
 
 ## Android build
 
+The Android project is in `android/`. Set `VITE_API_BASE_URL` in `.env`, then:
+
 ```bash
-npm run build
-npx cap add android
-npx cap sync
-npx cap open android
+npm run android:sync
+npm run android:open    # then Build → Build APK(s) in Android Studio
 ```
 
 On a real phone, set `VITE_API_BASE_URL` to your computer's LAN IP (e.g. `http://192.168.1.20:4000`) or a deployed backend URL, then rebuild.

@@ -364,18 +364,18 @@ await test('server: input checks, number grounding, no key → 503, ungrounded r
   const valid = { question: 'How much fuel?', lang: 'en', draft: 'Buy about 20L.', facts: { genLitresPerDay: 4.2 } };
 
   const noKey = mockRes();
-  await createAgentChatHandler({ apiKey: undefined, model: 'm' })(req(valid), noKey);
+  await createAgentChatHandler({ provider: 'anthropic', apiKey: undefined, model: 'm' })(req(valid), noKey);
   ok(noKey.code === 503, `no key → ${noKey.code}`);
 
   const llm = (text: string) => (async () => new Response(JSON.stringify({ content: [{ type: 'text', text }] }))) as any;
   const good = mockRes();
-  await createAgentChatHandler({ apiKey: 'k', model: 'm', fetchImpl: llm('You need to buy about 20L this week.') })(req(valid), good);
+  await createAgentChatHandler({ provider: 'anthropic', apiKey: 'k', model: 'm', fetchImpl: llm('You need to buy about 20L this week.') })(req(valid), good);
   ok(good.body?.text?.includes('20L') && good.body.grounded === true, `grounded reply: ${JSON.stringify(good.body)}`);
   const bad = mockRes();
-  await createAgentChatHandler({ apiKey: 'k', model: 'm', fetchImpl: llm('Buy 45L at ₦900.') })(req(valid), bad);
+  await createAgentChatHandler({ provider: 'anthropic', apiKey: 'k', model: 'm', fetchImpl: llm('Buy 45L at ₦900.') })(req(valid), bad);
   ok(bad.body?.text === 'Buy about 20L.' && bad.body.grounded === false, `ungrounded → draft: ${JSON.stringify(bad.body)}`);
 
-  const limited = createAgentChatHandler({ apiKey: 'k', model: 'm', fetchImpl: llm('Ok 20L.'), rateLimit: { max: 2, windowMs: 60_000 } });
+  const limited = createAgentChatHandler({ provider: 'anthropic', apiKey: 'k', model: 'm', fetchImpl: llm('Ok 20L.'), rateLimit: { max: 2, windowMs: 60_000 } });
   const codes: number[] = [];
   for (let i = 0; i < 3; i++) { const r = mockRes(); await limited(req(valid), r); codes.push(r.code); }
   ok(codes[2] === 429, `rate limit codes ${codes}`);

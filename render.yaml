@@ -1,0 +1,22 @@
+# Render blueprint for the Lightline backend (free web service).
+# The database is Neon (free plan doesn't expire): paste its connection string as DATABASE_URL.
+services:
+  - type: web
+    name: lightline-api
+    runtime: node
+    plan: free
+    region: frankfurt # next to Neon's AWS Europe Central (Frankfurt) region
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false # paste the Neon connection string in the Render dashboard
+      - key: GUIDE_AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false # paste your Gemini key in the Render dashboard
+      - key: GUIDE_MODEL
+        sync: false # optional; leave empty for the default
