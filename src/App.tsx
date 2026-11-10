@@ -47,6 +47,13 @@ import { OfflineSyncEngine } from './services/offlineSyncEngine';
 import { useHardwarePowerSensor } from './hooks/useHardwarePowerSensor';
 import MoneyTab from './components/MoneyTab';
 import WetinDeyStrip from './components/WetinDeyStrip';
+import GuideCard from './components/guide/GuideCard';
+import GuideChat from './components/guide/GuideChat';
+import GuideSettings from './components/guide/GuideSettings';
+import DemoBar from './components/guide/DemoBar';
+import NudgeBanner from './components/guide/NudgeBanner';
+import { useDailyGuide } from './hooks/useDailyGuide';
+import type { AgentEvent } from './agent/types';
 
 type ActiveTab = 'LIGHT_GEN' | 'BANK_WEATHER' | 'CHORE_QUEUE' | 'FUEL_RADAR' | 'MONEY';
 
@@ -220,6 +227,45 @@ export default function App() {
     [chores, activeZone]
   );
 
+  // ------------------------------------------------------------------ Daily Guide agent
+  const [ledgerVersion, setLedgerVersion] = useState(0);
+  useEffect(() => setLedgerVersion((v) => v + 1), [activeTab]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [guideSettingsOpen, setGuideSettingsOpen] = useState(false);
+  const guide = useDailyGuide({
+    stateCode,
+    stateName: currentState.name,
+    zone: activeZone,
+    gen: genState,
+    genLiveFuelLitres: liveGenMetrics.liveFuelRemainingLitres,
+    bankWeather,
+    marketRadar,
+    chores,
+    isOnline,
+    batteryPct: batteryPercentage,
+    isCharging: isDevicePluggedIn,
+    ledgerVersion
+  });
+
+  /** Crowd data that arrives from the server becomes part of the Guide's memory. */
+  const recordSnapshot = (snapshot: { zones: FeederZoneStatus[]; marketRadar: MarketRadarItem[] }, code: StateCode) => {
+    const events: AgentEvent[] = [];
+    const mine = snapshot.zones.find((z) => z.zoneId === OfflineSyncEngine.getSelectedZoneId());
+    if (mine && mine.currentState !== 'UNKNOWN' && new Date(mine.lastUpdatedAt).getTime() > 0) {
+      events.push({ id: `pw-${mine.zoneId}-${mine.lastUpdatedAt}`, t: 'POWER', at: mine.lastUpdatedAt, zoneId: mine.zoneId, state: mine.currentState, source: 'CROWD' });
+    }
+    for (const m of snapshot.marketRadar) {
+      if (m.stateCode !== code) continue;
+      events.push({ id: `price-${m.id}`, t: 'PRICE', at: m.reportedAtIso, stateCode: m.stateCode, category: m.category, priceNgn: m.priceNgn, location: m.locationTitle, own: false });
+    }
+    guide.record(events);
+  };
+
+  const openTab = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   // Handlers
   const handleStateChange = (next: StateCode) => {
     setStateCode(next);
@@ -233,6 +279,7 @@ export default function App() {
     // Pull the latest reports for the new state if we are online
     OfflineSyncEngine.pullLiveSnapshot(next).then((snapshot) => {
       if (!snapshot) return;
+      recordSnapshot(snapshot, next);
       setZones(snapshot.zones);
       setBankWeather(snapshot.bankWeather);
       setMarketRadar(snapshot.marketRadar);
@@ -274,6 +321,10 @@ export default function App() {
       newState,
       source
     );
+    const pinged = updated.find((z) => z.zoneId === activeZone.zoneId);
+    if (pinged) {
+      guide.record([{ id: `pw-${pinged.zoneId}-${pinged.lastUpdatedAt}`, t: 'POWER', at: pinged.lastUpdatedAt, zoneId: pinged.zoneId, state: newState, source: 'SELF' }]);
+    }
     setZones(updated);
     setOutboxCount(OfflineSyncEngine.getOutbox().length);
     dismissTransitionAlert();
@@ -307,6 +358,16 @@ export default function App() {
       OfflineSyncEngine.saveGeneratorState(updated);
       showToast('⛽ Generator started. Live fuel burn timer active.');
     } else {
+      if (genState.startedAtIso && liveGenMetrics.elapsedHours >= 0.05) {
+        guide.record([{
+          id: `gen-${genState.startedAtIso}`,
+          t: 'GEN_RUN',
+          at: new Date().toISOString(),
+          startedAt: genState.startedAtIso,
+          hours: liveGenMetrics.elapsedHours,
+          litres: Number((liveGenMetrics.elapsedHours * genState.burnRateLitresPerHour).toFixed(2))
+        }]);
+      }
       const updated: GeneratorState = {
         ...genState,
         isRunning: false,
@@ -328,6 +389,19 @@ export default function App() {
       Number((liveGenMetrics.liveFuelRemainingLitres + litresToAdd).toFixed(1))
     );
     // If the gen is running, bank the hours burned so far before restarting the session clock
+    const nowIso = new Date().toISOString();
+    const events: AgentEvent[] = [{ id: `fuel-${nowIso}`, t: 'GEN_FUEL', at: nowIso, litres: litresToAdd }];
+    if (genState.isRunning && genState.startedAtIso && liveGenMetrics.elapsedHours >= 0.05) {
+      events.push({
+        id: `gen-${genState.startedAtIso}`,
+        t: 'GEN_RUN',
+        at: nowIso,
+        startedAt: genState.startedAtIso,
+        hours: liveGenMetrics.elapsedHours,
+        litres: Number((liveGenMetrics.elapsedHours * genState.burnRateLitresPerHour).toFixed(2))
+      });
+    }
+    guide.record(events);
     const updated: GeneratorState = {
       ...genState,
       currentFuelLitres: capped,
@@ -348,6 +422,8 @@ export default function App() {
     outcome: TransferOutcome
   ) => {
     const updated = OfflineSyncEngine.recordBankReport(institutionId, channel, outcome);
+    const atIso = new Date().toISOString();
+    guide.record([{ id: `bank-${institutionId}-${atIso}`, t: 'BANK', at: atIso, institutionId, channel, outcome }]);
     setBankWeather(updated);
     setOutboxCount(OfflineSyncEngine.getOutbox().length);
     showToast(
@@ -406,6 +482,8 @@ export default function App() {
       notes: newRadarNotes.trim() || 'Confirmed on ground.'
     });
 
+    const mineReport = updated[0];
+    guide.record([{ id: `price-${mineReport.id}`, t: 'PRICE', at: mineReport.reportedAtIso, stateCode: mineReport.stateCode, category: mineReport.category, priceNgn: mineReport.priceNgn, location: mineReport.locationTitle, own: true }]);
     setMarketRadar(updated);
     setOutboxCount(OfflineSyncEngine.getOutbox().length);
     setNewRadarLocation('');
@@ -421,6 +499,7 @@ export default function App() {
       OfflineSyncEngine.getSelectedState()
     );
     if (snapshot) {
+      recordSnapshot(snapshot, OfflineSyncEngine.getSelectedState());
       setZones(snapshot.zones);
       setBankWeather(snapshot.bankWeather);
       setMarketRadar(snapshot.marketRadar);
@@ -437,7 +516,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 selection:bg-emerald-500 selection:text-slate-950">
+    <div className="min-h-screen bg-slate-950 text-slate-100 pb-40 selection:bg-emerald-500 selection:text-slate-950">
       {/* Compact one-row header: brand, state picker, sync status. Never wraps on phones. */}
       <header
         className="sticky z-30 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-4 py-2.5"
@@ -574,7 +653,16 @@ export default function App() {
         {/* =================================================================== */}
         {activeTab === 'LIGHT_GEN' && (
           <div className="space-y-4">
-            <WetinDeyStrip
+            {guide.settings.demoMode && <DemoBar guide={guide} />}
+            <NudgeBanner
+              nudges={guide.liveNudges}
+              lang={guide.settings.language}
+              onOpen={openTab}
+              onDismiss={(n) => guide.hideNudge(n.key)}
+            />
+            <GuideCard guide={guide} onOpenTab={openTab} onOpenSettings={() => setGuideSettingsOpen(true)} />
+            {/* In demo mode only the Guide shows demo data, so the strip is hidden to avoid mixed figures */}
+            {!guide.settings.demoMode && <WetinDeyStrip
               stateName={currentState.name}
               stateCode={stateCode}
               zone={activeZone}
@@ -589,7 +677,7 @@ export default function App() {
                 setActiveTab(tab);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-            />
+            />}
 
             {/* Feeder Selector Card */}
             <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-4">
@@ -1310,6 +1398,26 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Ask the Daily Guide */}
+      {!chatOpen && (
+        <button
+          type="button"
+          onClick={() => setChatOpen(true)}
+          className="fixed z-40 inline-flex items-center gap-1.5 pl-3 pr-3.5 py-2.5 rounded-full bg-emerald-500 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-950/60"
+          style={{
+            right: 'max(16px, env(safe-area-inset-right, 0px))',
+            bottom: 'calc(5.25rem + env(safe-area-inset-bottom, 0px))'
+          }}
+        >
+          <Sparkles className="w-4 h-4" />
+          {guide.settings.language === 'pcm' ? 'Ask am' : 'Ask Guide'}
+        </button>
+      )}
+      {chatOpen && <GuideChat guide={guide} onClose={() => setChatOpen(false)} />}
+      {guideSettingsOpen && (
+        <GuideSettings guide={guide} onClose={() => setGuideSettingsOpen(false)} showToast={showToast} />
+      )}
 
       {/* Bottom Mobile Navigation Bar */}
       <nav className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-2 py-1.5">

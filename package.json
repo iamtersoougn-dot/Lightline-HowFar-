@@ -8,8 +8,9 @@
     "server": "tsx watch server/index.ts",
     "build": "tsc && vite build",
     "cap:sync": "npx cap sync",
-    "test": "tsx scripts/test-parser.ts && tsx scripts/test-parser-extra.ts && tsx scripts/test-states.ts",
-    "gen:schema": "tsx scripts/gen-schema.ts"
+    "test": "tsx scripts/test-parser.ts && tsx scripts/test-parser-extra.ts && tsx scripts/test-states.ts && tsx scripts/test-agent.ts",
+    "gen:schema": "tsx scripts/gen-schema.ts",
+    "demo:print": "tsx scripts/demo-print.ts"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.0",

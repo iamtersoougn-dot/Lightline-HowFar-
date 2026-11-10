@@ -9,6 +9,7 @@ import {
   isStateCode,
   legacyCityToState
 } from '../src/data/nigeriaStates';
+import { createAgentChatHandler } from './agentChat';
 
 /** Accepts a state code, or a city name from older app builds still in someone's outbox. */
 function resolveState(payload: Record<string, any>): StateCode | null {
@@ -29,6 +30,17 @@ const supabase =
   SUPABASE_URL && SUPABASE_SERVICE_KEY
     ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     : null;
+
+/**
+ * POST /api/v1/agent/chat — Daily Guide online answers (optional; the app works without it)
+ */
+app.post(
+  '/api/v1/agent/chat',
+  createAgentChatHandler({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    model: process.env.GUIDE_MODEL || 'claude-haiku-5-5'
+  })
+);
 
 /**
  * GET /api/v1/bootstrap

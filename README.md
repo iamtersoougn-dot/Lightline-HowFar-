@@ -2,6 +2,16 @@
 
 Offline-first companion for the Nigerian day, across all 36 states and the FCT. One glance answers "wetin dey?": is there light, how much gen fuel is left, which banks are failing, what fuel and fares cost nearby, what chores are waiting, and where your money went today.
 
+## Daily Guide (AI agent)
+
+A personal agent that learns your light, generator, fuel, bank and spending patterns **on your phone**, predicts what's coming ("Light likely off 7–11pm tonight, charge now"), and acts with a morning brief, a few well-timed reminders and chat in English or Pidgin. Every suggestion says why, in one line.
+
+- How it works: [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md)
+- Code: `src/agent/` (journal, learning, suggestions, nudge limiter, brief, chat, demo week), `src/hooks/useDailyGuide.ts`, `src/components/guide/`, `server/agentChat.ts`
+- Demo for filming: Today → Daily Guide settings → **Demo week**, then tap 6:00am / 12:30pm / 6:15pm / 9:00pm. Or print it in a terminal: `npm run demo:print` (or `npm run demo:print -- pcm` for Pidgin).
+- Online chat is optional: set `ANTHROPIC_API_KEY` on the server. Without it, chat answers on the phone.
+- Privacy: [`docs/PRIVACY.md`](docs/PRIVACY.md) (draft). Status and launch checklist: [`docs/STATUS.md`](docs/STATUS.md).
+
 ## Run locally
 
 ```bash
@@ -49,7 +59,7 @@ The Money tab reads pasted bank and fintech alerts (GTBank, Zenith, Access, UBA,
 
 - Code: `src/services/alertParser.ts` (parser), `src/services/moneyLedger.ts` (storage), `src/components/MoneyTab.tsx` (UI).
 - Alerts never enter the sync outbox. Balances are stripped and account numbers are cut to the last 2 digits.
-- Tests: `npm test` runs 12 sample alerts across 11 banks/fintechs, plus the state coverage checks.
+- Tests: `npm test` runs 12 sample alerts across 11 banks/fintechs, the state coverage checks, and 41 Daily Guide agent tests.
 - Why paste instead of reading SMS automatically: Google Play only lets default SMS apps hold the READ_SMS permission, and other apps cannot read WhatsApp chats. The realistic next step is an Android share target, so users tap Share on an alert and pick Lightline.
 
 ## Notes before launch
